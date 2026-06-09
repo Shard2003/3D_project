@@ -1,3 +1,273 @@
-Hello guys
-How are you
-I'm fine.
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Animation</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #020408;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      font-family: 'Courier New', monospace;
+    }
+
+    canvas { display: block; }
+
+    #overlay {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    #overlay h1 {
+      font-size: clamp(12px, 2vw, 18px);
+      font-weight: 400;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      color: rgba(100, 180, 255, 0.55);
+      animation: fadeLabel 3s ease-in-out infinite alternate;
+    }
+
+    @keyframes fadeLabel {
+      from { opacity: 0.3; }
+      to   { opacity: 0.9; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="overlay">
+  <h1>Drag to explore &nbsp;·&nbsp; Scroll to zoom</h1>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ─── Scene ─────────────────────────────────────────────────── */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x020408);
+document.body.prepend(renderer.domElement);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 0, 18);
+
+/* ─── Fog ────────────────────────────────────────────────────── */
+scene.fog = new THREE.FogExp2(0x020408, 0.028);
+
+/* ─── Lights ─────────────────────────────────────────────────── */
+const ambient = new THREE.AmbientLight(0x0a1a2f, 2);
+scene.add(ambient);
+
+const pointA = new THREE.PointLight(0x3399ff, 6, 40);
+pointA.position.set(8, 6, 6);
+scene.add(pointA);
+
+const pointB = new THREE.PointLight(0xff4488, 4, 35);
+pointB.position.set(-8, -5, 4);
+scene.add(pointB);
+
+const pointC = new THREE.PointLight(0x44ffcc, 3, 30);
+pointC.position.set(0, 8, -6);
+scene.add(pointC);
+
+/* ─── Central torus-knot ─────────────────────────────────────── */
+const knotGeo = new THREE.TorusKnotGeometry(3.2, 0.9, 220, 28, 3, 5);
+const knotMat = new THREE.MeshPhongMaterial({
+  color: 0x0d1f3c,
+  emissive: 0x061226,
+  specular: 0x66ccff,
+  shininess: 120,
+  wireframe: false,
+  transparent: true,
+  opacity: 0.92,
+});
+const knot = new THREE.Mesh(knotGeo, knotMat);
+scene.add(knot);
+
+/* ─── Wireframe overlay on knot ──────────────────────────────── */
+const wireMat = new THREE.MeshBasicMaterial({
+  color: 0x1a6aff,
+  wireframe: true,
+  transparent: true,
+  opacity: 0.08,
+});
+const wireKnot = new THREE.Mesh(knotGeo, wireMat);
+scene.add(wireKnot);
+
+/* ─── Orbiting rings ─────────────────────────────────────────── */
+function makeRing(radius, tube, color, rx, ry) {
+  const geo = new THREE.TorusGeometry(radius, tube, 6, 90);
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = rx;
+  mesh.rotation.y = ry;
+  scene.add(mesh);
+  return mesh;
+}
+
+const rings = [
+  makeRing(5.5, 0.04, 0x2277ff, Math.PI / 2, 0),
+  makeRing(6.2, 0.03, 0xff3388, 1.1, 0.5),
+  makeRing(7.0, 0.025, 0x22ffcc, 0.3, 1.2),
+];
+
+/* ─── Particle field ─────────────────────────────────────────── */
+const PARTICLE_COUNT = 2800;
+const positions = new Float32Array(PARTICLE_COUNT * 3);
+const colors    = new Float32Array(PARTICLE_COUNT * 3);
+const palette   = [
+  new THREE.Color(0x3399ff),
+  new THREE.Color(0xff4488),
+  new THREE.Color(0x44ffcc),
+  new THREE.Color(0xffffff),
+];
+
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  const r = 9 + Math.random() * 22;
+  const theta = Math.random() * Math.PI * 2;
+  const phi   = Math.acos(2 * Math.random() - 1);
+  positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+  positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+  positions[i * 3 + 2] = r * Math.cos(phi);
+
+  const c = palette[Math.floor(Math.random() * palette.length)];
+  colors[i * 3]     = c.r;
+  colors[i * 3 + 1] = c.g;
+  colors[i * 3 + 2] = c.b;
+}
+
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+pGeo.setAttribute('color',    new THREE.BufferAttribute(colors,    3));
+
+const pMat = new THREE.PointsMaterial({
+  size: 0.12,
+  vertexColors: true,
+  transparent: true,
+  opacity: 0.7,
+  sizeAttenuation: true,
+});
+const particles = new THREE.Points(pGeo, pMat);
+scene.add(particles);
+
+/* ─── Icosahedron halo ───────────────────────────────────────── */
+const icoGeo = new THREE.IcosahedronGeometry(5.0, 1);
+const icoMat = new THREE.MeshBasicMaterial({
+  color: 0x1144aa,
+  wireframe: true,
+  transparent: true,
+  opacity: 0.12,
+});
+const ico = new THREE.Mesh(icoGeo, icoMat);
+scene.add(ico);
+
+/* ─── Orbit controls (manual, no plugin needed) ─────────────── */
+let isDragging = false, prevMouse = { x: 0, y: 0 };
+let rotX = 0, rotY = 0, targetRotX = 0, targetRotY = 0;
+
+renderer.domElement.addEventListener('mousedown', e => {
+  isDragging = true;
+  prevMouse = { x: e.clientX, y: e.clientY };
+});
+window.addEventListener('mouseup',  () => isDragging = false);
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  targetRotY += (e.clientX - prevMouse.x) * 0.006;
+  targetRotX += (e.clientY - prevMouse.y) * 0.006;
+  prevMouse = { x: e.clientX, y: e.clientY };
+});
+
+// Touch support
+renderer.domElement.addEventListener('touchstart', e => {
+  isDragging = true;
+  prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+});
+window.addEventListener('touchend',  () => isDragging = false);
+window.addEventListener('touchmove', e => {
+  if (!isDragging) return;
+  targetRotY += (e.touches[0].clientX - prevMouse.x) * 0.006;
+  targetRotX += (e.touches[0].clientY - prevMouse.y) * 0.006;
+  prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+});
+
+// Zoom
+let zoom = 18;
+window.addEventListener('wheel', e => {
+  zoom = Math.max(8, Math.min(35, zoom + e.deltaY * 0.03));
+});
+
+/* ─── Resize ─────────────────────────────────────────────────── */
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ─── Animation loop ─────────────────────────────────────────── */
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  // Smooth drag rotation
+  rotX += (targetRotX - rotX) * 0.08;
+  rotY += (targetRotY - rotY) * 0.08;
+  camera.position.z += (zoom - camera.position.z) * 0.06;
+
+  // Auto-rotate when idle
+  if (!isDragging) {
+    targetRotY += 0.003;
+    targetRotX = Math.sin(t * 0.18) * 0.25;
+  }
+
+  // Apply to pivot
+  scene.rotation.x = rotX;
+  scene.rotation.y = rotY;
+
+  // Knot pulsing
+  const pulse = 1 + Math.sin(t * 1.4) * 0.03;
+  knot.scale.setScalar(pulse);
+  wireKnot.scale.setScalar(pulse);
+  knot.rotation.z = t * 0.12;
+
+  // Rings orbit
+  rings[0].rotation.y = t * 0.38;
+  rings[1].rotation.x = t * 0.28;
+  rings[2].rotation.z = t * 0.22;
+
+  // Ico counter-rotate
+  ico.rotation.x = -t * 0.09;
+  ico.rotation.y =  t * 0.14;
+
+  // Particle slow spin
+  particles.rotation.y = t * 0.04;
+  particles.rotation.x = t * 0.02;
+
+  // Light orbit
+  pointA.position.x = Math.sin(t * 0.7) * 10;
+  pointA.position.z = Math.cos(t * 0.7) * 10;
+  pointB.position.x = Math.cos(t * 0.5) * 9;
+  pointB.position.y = Math.sin(t * 0.5) * 9;
+
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>
